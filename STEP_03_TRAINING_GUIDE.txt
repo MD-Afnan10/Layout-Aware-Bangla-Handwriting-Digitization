@@ -1,0 +1,59 @@
+=============================================================================
+                  STEP 03: BANGLA TrOCR TRAINING GUIDE
+=============================================================================
+Hello! This guide explains how to train the Bangla Text Recognition (HTR) 
+model on your NVIDIA RTX 2060 GPU.
+
+Because this model processes complex Bangla "Juktakkhor" (compound characters),
+we have designed a custom Cross-Lingual Vision-Encoder-Decoder architecture:
+- Encoder: google/vit-base-patch16-224-in21k (Vision Transformer)
+- Decoder: sagorsarker/bangla-bert-base (Bangla Language Model)
+
+-----------------------------------------------------------------------------
+1. SETUP & DEPENDENCIES
+-----------------------------------------------------------------------------
+Before running the scripts, make sure you pull the latest code from GitHub. 
+The requirements.txt has been updated with new Hugging Face libraries.
+
+Run this in your terminal:
+    pip install -r requirements.txt
+
+Ensure you have the 3GB Kaggle dataset extracted precisely at the root 
+of the project folder, so the path looks like this:
+    Layout-Aware-Bangla-Handwriting-Digitization/BN-HTR_Dataset/
+
+-----------------------------------------------------------------------------
+2. GENERATE THE DATASET MANIFEST
+-----------------------------------------------------------------------------
+First, we need to map the ~104,000 word crop images to their Excel ground
+truth text. 
+
+Run this command:
+    python src/trocr_dataset.py
+
+* This will scan the Excel files and create a clean CSV mapping file at:
+  data/trocr_dataset/train_manifest.csv
+* It should only take about 15-30 seconds.
+
+-----------------------------------------------------------------------------
+3. START THE TRAINING
+-----------------------------------------------------------------------------
+Once the CSV is generated, you can start the training process. 
+
+Run this command:
+    python scripts/run_trocr_train.py
+
+NOTES FOR YOUR GPU (RTX 2060):
+- The script is already configured with a batch_size of 4 to ensure it fits 
+  safely inside your 6GB/8GB of VRAM without crashing.
+- On your CUDA cores, this should take roughly 4 to 6 hours to complete 
+  all 5 epochs.
+
+-----------------------------------------------------------------------------
+4. AFTER TRAINING COMPLETES
+-----------------------------------------------------------------------------
+When the script finishes, it will save the fully trained model files into:
+    weights/trocr_bangla/
+
+Please zip the entire "trocr_bangla" folder and send it back to your 
+teammate so they can run the inference pipeline (Step 04/05)!

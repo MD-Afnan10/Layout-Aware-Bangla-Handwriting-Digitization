@@ -49,7 +49,7 @@ def estimate_skew_angle(image: np.ndarray, max_angle: float = 45.0) -> float:
     
     angles = []
     for line in lines:
-        x1, y1, x2, y2 = line[0]
+        x1, y1, x2, y2 = line.flatten()
         dx = x2 - x1
         dy = y2 - y1
         if dx == 0:

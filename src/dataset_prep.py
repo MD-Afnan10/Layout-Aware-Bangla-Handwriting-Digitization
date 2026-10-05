@@ -40,7 +40,8 @@ def collect_document_samples(dataset_root: Path) -> Dict[str, List[Tuple[Path, P
         
         pairs = []
         for img_path in page_images:
-            txt_path = lines_dir / f"{img_path.stem}.txt"
+            # In the Kaggle dataset structure, the .txt files are right next to the images
+            txt_path = doc_dir / f"{img_path.stem}.txt"
             if txt_path.exists():
                 pairs.append((img_path, txt_path))
                 

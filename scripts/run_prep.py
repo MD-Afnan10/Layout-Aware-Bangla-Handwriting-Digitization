@@ -9,6 +9,6 @@ sys.path.insert(0, str(repo_root))
 from src.dataset_prep import prepare_yolo_dataset
 
 if __name__ == "__main__":
-    dataset_dir = "f:/DIP/Dataset"
+    dataset_dir = str(repo_root / "BN-HTR_Dataset" / "Segmentation_Images" / "Lines")
     output_dir = str(repo_root / "data" / "yolo_dataset")
     prepare_yolo_dataset(dataset_dir, output_dir)
