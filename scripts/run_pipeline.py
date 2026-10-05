@@ -50,7 +50,7 @@ def run_end_to_end(image_path: str, device: str = "cpu"):
     # STEP 03: Bangla Text Recognition (TrOCR)
     # ---------------------------------------------------------
     print("\n[Step 3] Running Bangla Text Recognition (TrOCR)...")
-    if not trocr_model.exists():
+    if not (trocr_model / "config.json").exists():
         print(f"[WARNING] TrOCR model not found at {trocr_model}!")
         print("Falling back to dummy data for demonstration purposes...")
         # Create dummy predictions for the crops
