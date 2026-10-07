@@ -1,4 +1,7 @@
 import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
 import argparse
 from pathlib import Path
 import json
@@ -86,10 +89,12 @@ def run_end_to_end(image_path: str, device: str = "cpu"):
     # ---------------------------------------------------------
     print("\n[Step 5] Exporting Final Digitized Word Document...")
     final_docx = outputs_dir / f"{img_path.stem}_digitized.docx"
-    export_to_docx(
+    actual_saved = export_to_docx(
         fused_json_path=str(fused_json),
         output_docx_path=str(final_docx)
     )
+    if actual_saved:
+        final_docx = actual_saved
     
     print(f"\n==================================================")
     print(f" PIPELINE COMPLETE!")

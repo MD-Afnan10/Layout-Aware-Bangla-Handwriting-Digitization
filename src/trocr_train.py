@@ -3,7 +3,16 @@ Bangla TrOCR Training Script (Step 03)
 Fine-tunes a Vision-Encoder-Decoder model on the prepared word-crop dataset.
 """
 
+import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+import os
+from pathlib import Path
+import argparse
 import pandas as pd
+import numpy as np
+import torch
 from datasets import Dataset
 from PIL import Image
 from transformers import (
@@ -14,9 +23,7 @@ from transformers import (
     Seq2SeqTrainingArguments,
     default_data_collator
 )
-import evaluate
-import argparse
-import os
+import jiwer
 
 # Define globally for metrics compute
 processor = None
@@ -26,14 +33,17 @@ def compute_metrics(pred):
     labels_ids = pred.label_ids
     pred_ids = pred.predictions
 
-    # Replace -100 in the labels as we can't decode them
-    labels_ids[labels_ids == -100] = tokenizer.pad_token_id
+    if isinstance(pred_ids, tuple):
+        pred_ids = pred_ids[0]
+
+    # Replace -100 in labels so we can decode
+    labels_ids = np.where(labels_ids != -100, labels_ids, tokenizer.pad_token_id)
+    pred_ids = np.where(pred_ids != -100, pred_ids, tokenizer.pad_token_id)
 
     pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
     labels_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
 
-    cer_metric = evaluate.load("cer")
-    cer = cer_metric.compute(predictions=pred_str, references=labels_str)
+    cer = jiwer.cer(reference=labels_str, hypothesis=pred_str)
     return {"cer": cer}
 
 
@@ -41,35 +51,46 @@ def train_trocr(
     csv_path: str,
     output_dir: str = "weights/trocr_bangla",
     epochs: int = 5,
-    batch_size: int = 8
+    batch_size: int = 4,
+    max_samples: int = None,
+    from_pretrained: str = None,
+    learning_rate: float = 5e-5
 ):
     global processor, tokenizer
-    print("Loading ViT encoder and Bangla BERT decoder...")
     
-    # Use ViT for vision encoder and Bangla BERT for text decoder
-    encoder_id = "google/vit-base-patch16-224-in21k"
-    decoder_id = "sagorsarker/bangla-bert-base"
-    
-    processor = ViTImageProcessor.from_pretrained(encoder_id)
-    tokenizer = AutoTokenizer.from_pretrained(decoder_id)
-    
-    model = VisionEncoderDecoderModel.from_encoder_decoder_pretrained(encoder_id, decoder_id)
+    if from_pretrained and Path(from_pretrained).exists() and (Path(from_pretrained) / "config.json").exists():
+        print(f"Loading existing fine-tuned checkpoint from: {from_pretrained}")
+        processor = ViTImageProcessor.from_pretrained(from_pretrained)
+        tokenizer = AutoTokenizer.from_pretrained(from_pretrained)
+        model = VisionEncoderDecoderModel.from_pretrained(from_pretrained)
+    else:
+        print("Loading ViT encoder and Bangla BERT decoder...")
+        encoder_id = "google/vit-base-patch16-224-in21k"
+        decoder_id = "sagorsarker/bangla-bert-base"
+        processor = ViTImageProcessor.from_pretrained(encoder_id)
+        tokenizer = AutoTokenizer.from_pretrained(decoder_id)
+        model = VisionEncoderDecoderModel.from_encoder_decoder_pretrained(encoder_id, decoder_id)
     
     # Configure model parameters for TrOCR
     model.config.decoder_start_token_id = tokenizer.cls_token_id
     model.config.pad_token_id = tokenizer.pad_token_id
     model.config.vocab_size = model.config.decoder.vocab_size
 
-    # Beam search parameters
-    model.config.eos_token_id = tokenizer.sep_token_id
-    model.config.max_length = 64
-    model.config.early_stopping = True
-    model.config.no_repeat_ngram_size = 3
-    model.config.length_penalty = 2.0
-    model.config.num_beams = 4
+    # Generation parameters configured on generation_config (compatible with Transformers 5.x)
+    model.generation_config.decoder_start_token_id = tokenizer.cls_token_id
+    model.generation_config.pad_token_id = tokenizer.pad_token_id
+    model.generation_config.eos_token_id = tokenizer.sep_token_id
+    model.generation_config.max_length = 32
+    model.generation_config.num_beams = 1
+    model.generation_config.early_stopping = False
+    model.generation_config.length_penalty = 1.0
+    model.generation_config.no_repeat_ngram_size = 3
 
     print(f"Loading dataset from: {csv_path}")
     df = pd.read_csv(csv_path).dropna()
+    if max_samples and max_samples < len(df):
+        print(f"Subsampling dataset to {max_samples} samples...")
+        df = df.sample(n=max_samples, random_state=42).reset_index(drop=True)
     
     hf_dataset = Dataset.from_pandas(df)
     hf_dataset = hf_dataset.train_test_split(test_size=0.1, seed=42)
@@ -90,7 +111,10 @@ def train_trocr(
         ).input_ids
         
         # Replace pad token with -100 to ignore in loss
-        labels = [label if label != tokenizer.pad_token_id else -100 for label in labels]
+        labels = [
+            [token if token != tokenizer.pad_token_id else -100 for token in label]
+            for label in labels
+        ]
         
         batch["pixel_values"] = pixel_values
         batch["labels"] = labels
@@ -101,6 +125,9 @@ def train_trocr(
     print("Preprocessing evaluation data...")
     eval_ds.set_transform(preprocess_batch)
 
+    use_cuda = torch.cuda.is_available()
+    print(f"CUDA Available: {use_cuda}, using fp16={use_cuda}")
+
     training_args = Seq2SeqTrainingArguments(
         output_dir=output_dir,
         predict_with_generate=True,
@@ -108,8 +135,10 @@ def train_trocr(
         remove_unused_columns=False,
         per_device_train_batch_size=batch_size,
         per_device_eval_batch_size=batch_size,
-        fp16=False, 
-        logging_steps=50,
+        learning_rate=learning_rate,
+        fp16=use_cuda,
+        dataloader_num_workers=0,
+        logging_steps=20,
         save_strategy="epoch",
         num_train_epochs=epochs,
         save_total_limit=2,
@@ -140,6 +169,17 @@ if __name__ == "__main__":
     parser.add_argument("--output", type=str, default="weights/trocr_bangla")
     parser.add_argument("--epochs", type=int, default=5)
     parser.add_argument("--batch", type=int, default=4)
+    parser.add_argument("--max-samples", type=int, default=None, help="Limit number of samples.")
+    parser.add_argument("--from-pretrained", type=str, default=None, help="Resume from checkpoint folder.")
+    parser.add_argument("--lr", type=float, default=5e-5, help="Learning rate.")
     args = parser.parse_args()
     
-    train_trocr(args.csv, args.output, args.epochs, args.batch)
+    train_trocr(
+        args.csv, 
+        args.output, 
+        epochs=args.epochs, 
+        batch_size=args.batch, 
+        max_samples=args.max_samples,
+        from_pretrained=args.from_pretrained,
+        learning_rate=args.lr
+    )

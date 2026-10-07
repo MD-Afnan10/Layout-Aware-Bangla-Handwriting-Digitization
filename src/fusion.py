@@ -8,6 +8,11 @@ import json
 from pathlib import Path
 import argparse
 
+try:
+    from src.utils.juktakkhor import restore_juktakkhor
+except ModuleNotFoundError:
+    from utils.juktakkhor import restore_juktakkhor
+
 def fuse_document(layout_json_path: str, trocr_json_path: str, output_path: str):
     layout_file = Path(layout_json_path).resolve()
     trocr_file = Path(trocr_json_path).resolve()
@@ -34,7 +39,7 @@ def fuse_document(layout_json_path: str, trocr_json_path: str, output_path: str)
         doc_name = layout_data.get("document_name", "doc")
         crop_filename = f"{doc_name}_region_{order:03d}.jpg"
         
-        recognized_text = trocr_data.get(crop_filename, "")
+        recognized_text = restore_juktakkhor(trocr_data.get(crop_filename, ""))
         
         fused_region = {
             "reading_order": order,

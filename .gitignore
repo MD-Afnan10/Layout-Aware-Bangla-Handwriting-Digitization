@@ -44,12 +44,16 @@ Thumbs.db
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
 
-# Model Weights & Training Runs
+# Model Weights & Large Binaries (Never push to Git)
 *.pt
 *.pth
 *.onnx
 *.engine
 *.tflite
+*.safetensors
+*.bin
+*.zip
+*.tar.gz
 weights/
 runs/
 yolo_runs/
